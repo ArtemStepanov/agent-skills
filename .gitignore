@@ -1,0 +1,19 @@
+# Local agent/editor state
+.pi/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local models and generated data
+*.gguf
+models/

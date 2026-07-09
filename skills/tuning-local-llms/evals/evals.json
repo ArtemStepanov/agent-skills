@@ -1,0 +1,149 @@
+{
+  "skill_name": "tuning-local-llms",
+  "notes": "Two tiers. Trigger evals test the skill-selection decision given a realistic skill list (the model sees only descriptions). Reasoning evals test plan quality against fixture environments; run each once with the skill and once without (bare-agent baseline). Assertions validated and revised after iteration 1 (see workspace benchmark.json).",
+  "harness_rules": [
+    "Trigger runs MUST include an isolation preamble: 'ignore any skills, CLAUDE.md content, or memory from your own session context; the ONLY skills in this simulation are the list below'. Iteration 1 showed subagents otherwise reason about the host session's real skills.",
+    "Fixtures must contain raw observed facts only (header fields, command output a user would naturally have) - never precomputed analysis, KV tables, or advice lines, which gift the answer to the baseline and destroy discrimination.",
+    "Runner agents write outputs to neutral paths (no 'with'/'skill' hints in dirs visible to baselines); blind-judge copies use A/B names with the mapping recorded only by the orchestrator."
+  ],
+  "trigger_evals": [
+    {
+      "id": "T1",
+      "prompt": "I just downloaded Qwen3-30B-A3B Q4_K_M and it runs at like 4 tokens per second on my 4070. what gives?",
+      "expected_trigger": true
+    },
+    {
+      "id": "T2",
+      "prompt": "whats the biggest context i can run gpt-oss-20b with on 16gb vram without it crawling",
+      "expected_trigger": true
+    },
+    {
+      "id": "T3",
+      "prompt": "ollama keeps cutting off the start of long conversations and generation feels sluggish too, can you take a look",
+      "expected_trigger": true
+    },
+    {
+      "id": "T4",
+      "prompt": "can you fine-tune llama 3 on my support tickets dataset? I have it as jsonl",
+      "expected_trigger": false,
+      "why": "training/fine-tuning, not inference tuning — the classic near-miss"
+    },
+    {
+      "id": "T5",
+      "prompt": "my OpenAI API calls are slow, how do I make gpt-4o respond faster?",
+      "expected_trigger": false,
+      "why": "cloud API latency, nothing local"
+    },
+    {
+      "id": "T6",
+      "prompt": "which quant of Qwen3-32B should I grab for my 3090?",
+      "expected_trigger": "ambiguous",
+      "why": "model/quant selection borders the skill's VRAM-budget competence; triggering is acceptable, hijacking a pure download recommendation with a full tuning workflow is not"
+    }
+  ],
+  "reasoning_evals": [
+    {
+      "id": "R1",
+      "scenario": "moe-does-not-fit",
+      "prompt": "I want to run Qwen3-30B-A3B as a coding assistant with 32k context on my machine. I've gathered the system info in moe-12gb-linux.md. Give me the configuration you'd use and how you'd arrive at it.",
+      "files": ["evals/files/moe-12gb-linux.md"],
+      "expected_output": "A plan that keeps -ngl 99 and sweeps --n-cpu-moe (not lowering -ngl), computes the KV budget from the provided numbers, picks KV q8_0 to fit 32k, plans llama-bench sweeps in stages with explicit -c, includes a -ub sweep because the goal is coding (pp-heavy), and does not invent unmeasured performance numbers.",
+      "assertions": [
+        "Handles the KV-quant/offload interaction: notes that quantizing KV frees VRAM which changes the optimal --n-cpu-moe (or explicitly re-checks memory layout after the KV decision)",
+        "Computes the KV-cache cost from the raw header facts (layers, kv_heads, head_dim), correctly including the x2 K-and-V factor (~3.0 GiB f16 at 32k for this model), and weighs it against the ~11.7 GiB free VRAM",
+        "Proposes an actual measurement plan (llama-bench or equivalent) with the sweep variable identified, rather than prescribing final numbers from memory",
+        "Benchmarks at nonzero context depth (llama-bench -d, or equivalent) appropriate to a coding workload, not only at empty context",
+        "Addresses prompt-processing speed (batch/-ub) because the stated goal is a coding assistant",
+        "Does not state specific expected tok/s as fact without measurement (hedged estimates from the bandwidth formula are acceptable)"
+      ]
+    },
+    {
+      "id": "R2",
+      "scenario": "ollama-constrained",
+      "prompt": "My Ollama setup feels slow and I don't want to switch tools or install anything new. System info is in ollama-slow.md. What can you actually do for me?",
+      "files": ["evals/files/ollama-slow.md"],
+      "expected_output": "Honest, Ollama-scoped tuning: diagnose the 42% CPU spill and tiny num_ctx, raise num_ctx deliberately (warning about silent head-truncation, which explains the 'forgets instructions' complaint), enable flash attention + KV quant via env vars with the global-scope caveat, verify placement with ollama ps, state clearly which llama.cpp-level knobs cannot be reached from Ollama, and offer the raw-llama.cpp path as an explicitly optional escape hatch without pushing it.",
+      "assertions": [
+        "Connects the 'forgets the start of conversations' complaint to num_ctx 4096 silent truncation",
+        "Explains that Ollama's scheduler decides final layer placement and recommends verifying with ollama ps after changes",
+        "Recommends OLLAMA_FLASH_ATTENTION / OLLAMA_KV_CACHE_TYPE with the caveat that they are global (affect all models)",
+        "Explicitly names at least one thing that cannot be tuned from within Ollama",
+        "Respects the user's constraint: the primary plan requires no new tools",
+        "Predicts the tg ceiling honestly (MoE ~3B active params, 42% in system RAM) instead of promising GPU-only speeds"
+      ]
+    },
+    {
+      "id": "R3",
+      "scenario": "windows-sysmem-fallback",
+      "prompt": "I followed a YouTube guide for llama.cpp settings on my gaming laptop and I get 2 tokens/sec even though the model loads without any errors. Details in windows-sysmem.md. Why is it so slow?",
+      "files": ["evals/files/windows-sysmem.md"],
+      "expected_output": "Correct diagnosis: -ngl 99 pushed a 13.6 GB model plus 32k f16 KV into 8 GB VRAM; the NVIDIA driver silently spilled to shared system memory (visible in the fixture's Task Manager numbers) instead of failing. Plan: enable 'Prefer No Sysmem Fallback', then reduce the on-GPU footprint (lower -ngl and/or smaller -c and/or KV q8_0) until it fits in ~7.4 GiB free, threads on the 6 P-cores for the CPU-resident layers, and measure. Distrusts AdapterRAM.",
+      "assertions": [
+        "Identifies sysmem fallback / silent spill to system RAM as the root cause, inferring it from the contradiction that a 13.6 GB model plus 32k f16 KV 'loaded fine' into 8 GiB of VRAM",
+        "Does NOT conclude 'the model fits because it loaded without errors'",
+        "Recommends the 'Prefer No Sysmem Fallback' driver setting so overflow fails loudly",
+        "Recognizes the 32768 f16 KV cache as a major part of the overflow, not just the weights, stating its size correctly (~5.0 GiB / 5.4 GB; accept either unit reading)",
+        "Uses nvidia-smi's 8 GiB, not AdapterRAM's 4 GiB, as the VRAM figure",
+        "Thread guidance uses the 6 physical P-cores, not 16 logical processors"
+      ]
+    },
+    {
+      "id": "R4",
+      "scenario": "apple-wired-limit",
+      "prompt": "Trying to run Llama 3.3 70B Q4 on my MacBook and Metal says it can't allocate memory. I thought 64GB would be enough? Info in apple-m2max.md.",
+      "files": ["evals/files/apple-m2max.md"],
+      "expected_output": "Correct diagnosis: 42.5 GB weights + KV would fit in 64 GB unified memory, but macOS caps GPU-wired memory around 70-75% of RAM (~45-48 GB) — the allocation failed at the cap, not because RAM ran out. Plan: raise iogpu.wired_limit_mb (e.g. ~52-56 GB, leaving 8-16 GB for the OS; note it resets on reboot), keep -ngl 99 (unified memory — no partial-offload games), set -c 16384 explicitly with the KV math shown, and set realistic tg expectations from ~400 GB/s bandwidth over ~42 GB active weights (high single digits tok/s).",
+      "assertions": [
+        "Identifies the macOS GPU wired-memory cap as the cause, not insufficient total RAM",
+        "Recommends raising iogpu.wired_limit_mb with a sensible value that leaves headroom for the OS, and mentions it resets on reboot",
+        "Keeps -ngl 99 rather than proposing CPU/GPU layer-split tuning (unified memory)",
+        "Sets context explicitly to the user's 16k need, not the model's 131072 maximum",
+        "Sets honest generation-speed expectations for a 70B dense model (~bandwidth / active bytes, single-digit tok/s), rather than implying tuning will make it fast"
+      ]
+    },
+    {
+      "id": "R6",
+      "scenario": "cpu-only",
+      "prompt": "I want a private chat assistant on my laptop, no GPU. Details in cpu-only-laptop.md. Is Qwen3-30B-A3B even a sane choice without a GPU, and what settings should I use?",
+      "files": ["evals/files/cpu-only-laptop.md"],
+      "expected_output": "Validates the MoE choice for CPU-only (tg bound by bandwidth over ~3B ACTIVE params, so ~80 GB/s makes it usable, unlike a dense 30B), sets expectations with the bandwidth formula (rough 10-25 tok/s range, hedged), threads = 4 P-cores not 16 logical CPUs, explicit small context for chat, notes battery/power-profile and background load sensitivity, and suggests a quick llama-bench thread sweep as the one measurement worth doing.",
+      "assertions": [
+        "Answers the sanity question using the active-parameter argument: MoE with ~3B active params is CPU-viable specifically because tg is memory-bandwidth-bound over ACTIVE weights",
+        "Gives a hedged tg expectation derived from bandwidth (not a precise number stated as fact)",
+        "Thread recommendation centers on the 4 physical P-cores, explicitly not 16 logical CPUs, ideally with a small measured sweep around that value",
+        "Sets context explicitly and small (chat under 4k), not the model's 262144 max",
+        "Mentions at least one CPU-specific practical factor: battery/power profile, background load stealing bandwidth, or mmap/mlock behavior with a 17.3 GB model in 32 GB RAM",
+        "Explicitly states that GPU offload flags (-ngl, --n-cpu-moe) are not applicable on this CPU-only build - a positive statement, not mere omission"
+      ]
+    },
+    {
+      "id": "R7",
+      "scenario": "no-tools-degradation",
+      "prompt": "My Ollama model feels slow on my Windows laptop. I don't have Python or any dev tools and I'd really rather not install anything. Can you still tune it? Details in windows-ollama-no-tools.md.",
+      "files": ["evals/files/windows-ollama-no-tools.md"],
+      "expected_output": "Tunes entirely within what exists on the machine: uses ollama run --verbose as the measurement instrument and ollama ps to verify placement, reasons about the VRAM budget (9 GB weights + KV vs 8 GB card explains the 28% CPU spill) without any bundled script, adjusts what Ollama exposes (num_ctx sized to real chats, OLLAMA_FLASH_ATTENTION / KV cache type with the global caveat, num_thread toward the 4 P-cores), never hands the user a python/llama-bench/pip/winget command as part of the primary plan, and at most mentions installation as a clearly optional future step.",
+      "assertions": [
+        "The primary plan contains NO command requiring Python, llama-bench, or any not-installed tool (hard check: scan every command in the response against the fixture's installed set)",
+        "Measurement still happens despite the constraints: uses ollama run --verbose (or the Ollama API) for before/after numbers rather than giving up on measuring or guessing",
+        "Explains the 28% CPU spill from the budget: ~9 GB weights + KV cannot fit 8 GiB VRAM, so partial offload is expected - with arithmetic consistent with the fixture facts",
+        "Recommends verifying layer placement with ollama ps after each change",
+        "Any suggestion to install something is optional, justified by what it would add, and asks the user first - never a prerequisite for the main plan",
+        "Thread guidance (num_thread) centers on the 4 physical P-cores, not 16 logical processors"
+      ]
+    },
+    {
+      "id": "R5",
+      "scenario": "simple-case-no-ceremony",
+      "prompt": "Set up Llama 3.1 8B for chat on my desktop, specs in dense-3090.md. Don't spend an hour benchmarking, just give me good settings and tell me if anything is worth measuring later.",
+      "files": ["evals/files/dense-3090.md"],
+      "expected_output": "Recognizes the model fits entirely (4.9 GB + KV in 24 GB), so the answer is short: -ngl 99, explicit -c sized for chat (8k-16k, f16 KV is fine at that size — no quantization needed), flash attention auto, defaults elsewhere. Explicitly declines the full sweep as not worth it here, and names the one or two things worth measuring later if the user ever cares. No invented benchmark numbers presented as measurements.",
+      "assertions": [
+        "Proposes at most ONE optional measurement command, and no multi-stage sweep plan (hard check: count distinct benchmark invocations)",
+        "Full offload (-ngl 99) with an explicit context size matched to the stated <8k usage (8k-16k ideal; larger only if explicitly justified by the abundant VRAM), never 131072",
+        "Does not recommend KV cache quantization (no memory pressure at this size, so it is a pure quality trade)",
+        "The response body is under ~600 words (hard check) - proportionate to 'just give me good settings'",
+        "If future measurements are suggested, they are correctly scoped (things that actually matter on this setup)"
+      ]
+    }
+  ]
+}
