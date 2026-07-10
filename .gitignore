@@ -17,3 +17,7 @@
 # Local models and generated data
 *.gguf
 models/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
