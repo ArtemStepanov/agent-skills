@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-skills",
+  "description": "Reusable coding-agent skills, starting with benchmark-driven local LLM tuning.",
+  "owner": {
+    "name": "Artem Stepanov",
+    "url": "https://github.com/ArtemStepanov"
+  },
+  "plugins": [
+    {
+      "name": "agent-skills",
+      "description": "Reusable coding-agent skills for local LLM tuning and future workflows.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

@@ -16,5 +16,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Compile Python helpers
         run: python3 -m compileall -q skills/*/scripts
-      - name: Verify skill metadata is present
-        run: test -f skills/tuning-local-llms/SKILL.md
+      - name: Verify distribution metadata
+        run: |
+          test -f skills/tuning-local-llms/SKILL.md
+          test -f .claude-plugin/marketplace.json
+          test -f .claude-plugin/plugin.json
+          test -f plugin.yaml
+          ! grep -R 'CLAUDE_SKILL_DIR' skills
+      - name: Test Hermes adapter
+        run: python3 tests/test_hermes_plugin.py

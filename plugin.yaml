@@ -1,0 +1,6 @@
+name: agent-skills
+version: 0.1.0
+description: Reusable coding-agent skills, starting with benchmark-driven local LLM tuning.
+author: Artem Stepanov
+provides_skills:
+  - tuning-local-llms

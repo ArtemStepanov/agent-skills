@@ -72,8 +72,9 @@ Step 3 by hand. Only suggest installing something (llama.cpp for proper
 sweeps) when the degraded path genuinely can't answer the user's question —
 install one-liners per platform are in [references/platforms.md](references/platforms.md).
 
-**Model:** run `python3 ${CLAUDE_SKILL_DIR}/scripts/gguf-meta.py <model.gguf>`
-— it prints layer count, KV heads, head dim, expert count (MoE or dense), and
+**Model:** run `python3 <skill-dir>/scripts/gguf-meta.py <model.gguf>`, where
+`<skill-dir>` is the directory containing this `SKILL.md`; it prints layer
+count, KV heads, head dim, expert count (MoE or dense), and
 the computed KV-cache cost per context size. KV heads drive context cost: 2 KV
 heads means context is cheap (go big); 8+ means it's expensive (quantize KV,
 cap context). Users often already have GGUFs on disk from another tool

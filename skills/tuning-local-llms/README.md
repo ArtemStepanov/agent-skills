@@ -43,16 +43,9 @@ tuning, and asks before suggesting it.
 
 ## Install
 
-**Claude Code (personal):**
-
-```sh
-git clone <this-repo> && cp -r <this-repo>/skills/tuning-local-llms ~/.claude/skills/
-```
-
-**Claude Code (project):** copy the folder into your repo's `.claude/skills/`.
-
-Other agentskills.io-compatible runtimes: copy the folder into that tool's
-skills directory.
+See the [collection install guide](../../README.md#install) for Pi, Hermes Agent,
+Claude Code, and generic Agent Skills-compatible harnesses. Pin a release tag
+rather than installing from `main`.
 
 ## Try it
 

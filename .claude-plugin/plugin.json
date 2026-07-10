@@ -1,0 +1,9 @@
+{
+  "name": "agent-skills",
+  "version": "0.1.0",
+  "description": "Reusable coding-agent skills, starting with benchmark-driven local LLM tuning.",
+  "author": {
+    "name": "Artem Stepanov",
+    "url": "https://github.com/ArtemStepanov"
+  }
+}
